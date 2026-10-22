@@ -1,0 +1,19 @@
+[project]
+name = "entra-obo-github-poc"
+version = "0.1.0"
+description = "Local Entra OBO and GitHub App user authorization proof of concept"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=45.0.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "msal>=1.31.0",
+    "PyJWT[crypto]>=2.10.0",
+    "python3-saml>=1.16.0",
+    "python-dotenv>=1.0.1",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[tool.uv]
+package = false

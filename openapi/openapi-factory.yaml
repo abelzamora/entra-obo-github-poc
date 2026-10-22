@@ -1,0 +1,351 @@
+openapi: 3.0.3
+info:
+  title: Factory API
+  version: 0.1.0
+  description: >-
+    Independent Factory service in the local proof of concept. Its protected
+    API accepts only Entra App 2 access tokens issued to a caller using the
+    delegated `access_as_user` scope. Agentic Products obtains this token by
+    exchanging the user's App 1 token through Entra on-behalf-of (OBO). Factory
+    binds GitHub authorization and encrypted token storage to the validated
+    Entra tenant (`tid`) and user object (`oid`).
+servers:
+  - url: http://localhost:8002
+    description: Local development server
+tags:
+  - name: UI
+  - name: Authentication
+  - name: Identity
+  - name: GitHub
+  - name: Demo
+  - name: Operations
+paths:
+  /:
+    get:
+      tags: [UI]
+      summary: Load the standalone Factory demo page
+      operationId: getHome
+      responses:
+        '200':
+          description: HTML application interface
+          content:
+            text/html:
+              schema: { type: string }
+  /auth/login:
+    get:
+      tags: [Authentication]
+      summary: Start Factory's independent Entra OAuth sign-in demo
+      description: This browser flow is for demonstrating Factory as a standalone client. The member API flow normally receives an App 2 token from Agentic Products through OBO.
+      operationId: startOAuthLogin
+      parameters:
+        - { name: return_to, in: query, required: false, schema: { type: string, format: uri } }
+      responses:
+        '307': { description: Redirect to Entra authorization endpoint }
+        '400': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /auth/callback:
+    get:
+      tags: [Authentication]
+      summary: Complete Factory's standalone OAuth authorization-code flow
+      operationId: oauthCallback
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        '307': { description: Redirect to the configured local UI }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /auth/logout:
+    get:
+      tags: [Authentication]
+      summary: Clear Factory's standalone OAuth session and sign out at Entra
+      operationId: oauthLogout
+      parameters:
+        - { name: return_to, in: query, required: false, schema: { type: string, format: uri } }
+      responses:
+        '307': { description: Redirect through Entra logout }
+        '400': { $ref: '#/components/responses/Problem' }
+  /demo/logout:
+    get:
+      tags: [Authentication]
+      summary: Clear Factory's local OAuth and SAML browser cookies
+      operationId: demoLogout
+      parameters:
+        - { name: return_to, in: query, required: false, schema: { type: string, format: uri } }
+      responses:
+        '307': { description: Redirect to the requested local demo page }
+  /identity/validate:
+    get:
+      tags: [Identity]
+      summary: Validate an App 2 access token and return demo identity claims
+      operationId: validateIdentity
+      security: [{ App2Bearer: [] }]
+      responses:
+        '200':
+          description: Token is valid for this API
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [validated, claims]
+                properties:
+                  validated: { type: boolean, enum: [true] }
+                  claims: { $ref: '#/components/schemas/IdentityClaims' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /saml/metadata:
+    get:
+      tags: [Authentication]
+      summary: Get Factory SAML service-provider metadata
+      operationId: getSamlMetadata
+      responses:
+        '200':
+          description: SAML 2.0 service-provider metadata XML
+          content:
+            application/samlmetadata+xml:
+              schema: { type: string }
+        '500': { $ref: '#/components/responses/Problem' }
+  /saml/login:
+    get:
+      tags: [Authentication]
+      summary: Start Factory's local SAML sign-in demo
+      operationId: startSamlLogin
+      parameters:
+        - { name: return_to, in: query, required: false, schema: { type: string, format: uri } }
+      responses:
+        '307': { description: Redirect to the configured SAML identity provider }
+        '400': { $ref: '#/components/responses/Problem' }
+  /saml/acs:
+    post:
+      tags: [Authentication]
+      summary: Factory SAML assertion consumer service
+      description: Receives the identity provider's form-posted SAML response. The assertion itself is never returned by the API.
+      operationId: samlAssertionConsumerService
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [SAMLResponse, RelayState]
+              properties:
+                SAMLResponse: { type: string, description: Base64-encoded SAML response }
+                RelayState: { type: string }
+      responses:
+        '307': { description: Successful sign-in; redirect to the configured Agentic Products UI }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /saml/logout:
+    get:
+      tags: [Authentication]
+      summary: Clear Factory's local SAML session
+      operationId: samlLogout
+      parameters:
+        - { name: return_to, in: query, required: false, schema: { type: string, format: uri } }
+      responses:
+        '307': { description: Redirect to Agentic Products or another configured local return URL }
+        '400': { $ref: '#/components/responses/Problem' }
+  /demo/reset:
+    post:
+      tags: [Demo]
+      summary: Remove the current user's local demo state
+      description: Removes the user's stored GitHub link and local SAML/OAuth session state keyed by the validated App 2 token's `tid` and `oid`. It does not revoke authorization at GitHub.
+      operationId: resetDemo
+      security: [{ App2Bearer: [] }]
+      responses:
+        '200':
+          description: Reset details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResetResult' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /saml/status:
+    get:
+      tags: [Authentication]
+      summary: Check the local SAML session associated with the current Entra user
+      operationId: getSamlStatus
+      security: [{ App2Bearer: [] }]
+      responses:
+        '200':
+          description: SAML connection state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionStatus' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /oauth/status:
+    get:
+      tags: [Authentication]
+      summary: Check Factory's standalone OAuth session for the current Entra user
+      operationId: getOAuthStatus
+      security: [{ App2Bearer: [] }]
+      responses:
+        '200':
+          description: OAuth connection state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionStatus' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /github/connect/start:
+    post:
+      tags: [GitHub]
+      summary: Create a user-bound GitHub authorization URL
+      description: Requires an App 2 OBO token. The return URL must match the configured Agentic Products local origin. Returns a URL for the browser to visit.
+      operationId: startGitHubConnection
+      security: [{ App2Bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectRequest' }
+      responses:
+        '200':
+          description: GitHub authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorization_url]
+                properties:
+                  authorization_url: { type: string, format: uri }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '500': { $ref: '#/components/responses/Problem' }
+  /github/callback:
+    get:
+      tags: [GitHub]
+      summary: Complete GitHub authorization and store the user's token
+      description: GitHub redirects the browser here with a short-lived code and state. Factory validates the one-time state, exchanges the code, identifies the GitHub account, encrypts and stores the token against the originating Entra `tid` and `oid`, then redirects to Agentic Products.
+      operationId: githubCallback
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        '307': { description: Redirect after successful link or denied authorization }
+        '400': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+  /github/status:
+    get:
+      tags: [GitHub]
+      summary: Check whether the current Entra user has linked GitHub
+      operationId: getGitHubStatus
+      security: [{ App2Bearer: [] }]
+      responses:
+        '200':
+          description: GitHub link status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connected, github_login]
+                properties:
+                  connected: { type: boolean }
+                  github_login: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /github/repos:
+    get:
+      tags: [GitHub]
+      summary: List repositories granted through this GitHub App's installations
+      description: Uses the GitHub token linked to the caller's Entra identity, inspects installations for the configured GitHub App, and returns only installation-scoped repositories visible to the connected account.
+      operationId: listGitHubRepositories
+      security: [{ App2Bearer: [] }]
+      responses:
+        '200':
+          description: Installation-scoped repositories
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RepositoryList' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '500': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+  /health:
+    get:
+      tags: [Operations]
+      summary: Health check
+      operationId: health
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, application]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  application: { type: string, enum: [factory] }
+components:
+  securitySchemes:
+    App2Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Entra delegated access token whose audience is the Factory API and whose scp claim includes access_as_user. In the member flow Agentic Products obtains this token via OBO.
+  schemas:
+    IdentityClaims:
+      type: object
+      properties:
+        aud:
+          oneOf:
+            - { type: string, nullable: true }
+            - { type: array, nullable: true, items: { type: string } }
+        tid: { type: string, nullable: true, description: Entra tenant ID }
+        oid: { type: string, nullable: true, description: Entra user object ID }
+    ConnectionStatus:
+      type: object
+      required: [connected, claims]
+      properties:
+        connected: { type: boolean }
+        claims: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/IdentityClaims' }] }
+        email: { type: string, nullable: true }
+    ConnectRequest:
+      type: object
+      required: [return_to]
+      properties:
+        return_to: { type: string, format: uri, description: Must be the configured Agentic Products local URL }
+    Repository:
+      type: object
+      properties:
+        id: { type: integer, nullable: true }
+        full_name: { type: string, nullable: true }
+        private: { type: boolean, nullable: true }
+        html_url: { type: string, nullable: true, format: uri }
+        description: { type: string, nullable: true }
+        default_branch: { type: string, nullable: true }
+        permissions: { type: object, nullable: true, additionalProperties: { type: boolean } }
+    RepositoryList:
+      type: object
+      required: [github_login, count, repositories, note]
+      properties:
+        github_login: { type: string }
+        count: { type: integer }
+        repositories: { type: array, items: { $ref: '#/components/schemas/Repository' } }
+        note: { type: string }
+    ResetResult:
+      type: object
+      properties:
+        reset: { type: boolean }
+        github_link_removed: { type: boolean }
+        saml_session_removed: { type: boolean }
+        oauth_session_removed: { type: boolean }
+        pending_github_states_removed: { type: integer }
+        note: { type: string }
+    Problem:
+      type: object
+      properties:
+        detail: { type: string }
+  responses:
+    Problem:
+      description: Error details
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Problem' }
